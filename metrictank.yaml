@@ -132,7 +132,7 @@
 
   handlers:
 
-  - name: Restart Csrond
+  - name: Restart Crond
     systemd:
       name: crond
       state: restarted
