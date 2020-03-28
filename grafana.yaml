@@ -22,7 +22,7 @@
         dest: /etc/yum.repos.d/grafana.repo
         content: "{{ grafana_repo_content }}"
 
-    - name: Install MetricTank
+    - name: Install Grafana
       yum:
         name: grafana
         state: latest
