@@ -1,0 +1,41 @@
+---
+- name: Installation of Grafana
+  hosts: graphite_web
+  become: yes
+
+  vars:
+    grafana_repo_content: |
+      [grafana]
+      name=grafana
+      baseurl=https://packages.grafana.com/oss/rpm
+      repo_gpgcheck=1
+      enabled=1
+      gpgcheck=1
+      gpgkey=https://packages.grafana.com/gpg.key
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+
+  tasks:
+
+    - name: Setup "grafana" repo
+      copy:
+        dest: /etc/yum.repos.d/grafana.repo
+        content: "{{ grafana_repo_content }}"
+
+    - name: Install MetricTank
+      yum:
+        name: grafana
+        state: latest
+
+    - name: Start Grafana
+      systemd:
+        name: grafana
+        state: started
+        enabled: yes
+
+  handlers:
+
+  - name: Restart Grafana
+    systemd:
+      name: grafana
+      state: restarted
