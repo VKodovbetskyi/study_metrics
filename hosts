@@ -1,0 +1,15 @@
+[test_servers]
+graphite_web    ansible_host=10.166.0.15
+clickhouse      ansible_host=10.166.0.14
+metrictank_1    ansible_host=10.164.0.3
+
+[cassandra_cluster_test]
+cassandra_1     ansible_host=10.164.0.4
+cassandra_2     ansible_host=10.164.0.5
+cassandra_3     ansible_host=10.164.0.6
+
+[all:vars]
+ansible_user=admin
+ansible_ssh_private_key_file=/home/admin/.ssh/logkey
+cassandra_seeds=10.164.0.4,10.164.0.5,10.164.0.6
+cassandra_seeds_for_metrictank_ini=10.164.0.4:9042,10.164.0.5:9042,10.164.0.6:9042

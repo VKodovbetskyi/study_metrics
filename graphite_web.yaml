@@ -1,0 +1,182 @@
+---
+- name: Installation of a graphite-web server
+  hosts: graphite_web
+  become: yes
+
+  vars:
+    httpd_static_block: |
+
+          <Directory /opt/graphite/static/>
+            <IfVersion < 2.4>
+                    Order deny,allow
+                    Allow from all
+            </IfVersion>
+            <IfVersion >= 2.4>
+                    Require all granted
+            </IfVersion>
+          </Directory>
+
+  tasks:
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+      
+    - name: Change time zone to Europe/Kiev
+      timezone:
+        name: Europe/Kiev
+      notify: Restart crond
+
+    - name: Upgrade all packages
+      yum:
+        name: '*'
+        state: latest
+    - name: Install basic yum packages
+      yum:
+        name:
+          - bash-completion
+          - bash-completion-extras
+          - git
+          - python3
+          - python3-pip
+          - python3-devel
+          - pycairo
+          - httpd
+          - httpd-devel
+          - gcc
+        state: latest
+
+    - name: Upgrade pip packages + install virtualenv
+      pip:
+        name:
+          - pip
+          - setuptools
+          - wheel
+          - virtualenv
+          - mod_wsgi
+        executable: pip3
+        extra_args: "--upgrade"
+
+    - name: Clone Graphite-web repo to /tmp
+      git:
+        repo: "https://github.com/graphite-project/graphite-web.git"
+        dest: /tmp/graphite-web
+        version: 1.1.x
+
+    - name: Create Graphite-web virtual environement
+      pip:
+        virtualenv: /opt/graphite
+        virtualenv_command: /usr/local/bin/virtualenv
+        virtualenv_python: python3
+        requirements: /tmp/graphite-web/requirements.txt
+
+    - name: Downgrage Django package version to <2.2 due to sqlite3 old-version problem
+      pip:
+        name: Django<2.2
+        virtualenv: /opt/graphite
+        virtualenv_command: /usr/local/bin/virtualenv
+        extra_args: "--upgrade"
+
+    - name: Install Graphite-web to /opt/graphite directory
+      shell:
+        chdir: /tmp/graphite-web/
+        cmd: python setup.py install
+        creates: /opt/graphite/webapp
+
+    - name: Copy ..graphite/local_settings.py from example
+      copy:
+        src: /opt/graphite/webapp/graphite/local_settings.py.example
+        dest: /opt/graphite/webapp/graphite/local_settings.py
+        remote_src: yes
+
+    - name: Set general configuration SECRET KEY
+      lineinfile:
+        path: /opt/graphite/webapp/graphite/local_settings.py
+        insertafter: '^#SECRET_KEY'
+        line: SECRET_KEY = 'SUPER_AWESOME_COOL_SECRET_KEY'
+      notify: Restart Apache-service
+
+    - name: Set general configuration TIME ZONE
+      lineinfile:
+        path: /opt/graphite/webapp/graphite/local_settings.py
+        insertafter: '^#TIME_ZONE'
+        line: TIME_ZONE = 'Europe/Kiev'
+      notify: Restart Apache-service
+
+    - name: Set link to remote clickhouse storage backend
+      lineinfile:
+        path: /opt/graphite/webapp/graphite/local_settings.py
+        insertafter: '^#CLUSTER_SERVERS '
+        line: CLUSTER_SERVERS = ["10.166.0.14:9090"]
+      notify: Restart Apache-service
+
+    - name: Init mysqlite3 DB
+      shell:
+        chdir: /opt/graphite
+        cmd: PYTHONPATH=/opt/graphite/webapp /opt/graphite/bin/django-admin.py migrate --settings=graphite.settings
+        creates: /opt/graphite/storage/graphite.db
+
+    - name: Collect static files for graphite project
+      shell:
+        chdir: /opt/graphite
+        cmd: PYTHONPATH=/opt/graphite/webapp /opt/graphite/bin/django-admin.py collectstatic --noinput --settings=graphite.settings
+        creates: /opt/graphite/static/
+
+    - name: Copy graphite.wsgi
+      copy:
+        src: /opt/graphite/conf/graphite.wsgi.example
+        dest: /opt/graphite/conf/graphite.wsgi
+        remote_src: yes
+
+    - name: Copy vhost example file
+      copy:
+        src: /opt/graphite/examples/example-graphite-vhost.conf
+        dest: /etc/httpd/conf.d/graphite-vhost.conf
+        remote_src: yes
+
+    - name: Configuration of virtual host configuration (Step 1 of 3)
+      lineinfile:
+        path: /etc/httpd/conf.d/graphite-vhost.conf
+        regexp: 'LoadModule wsgi_module'
+        line: "    LoadModule wsgi_module /usr/local/lib64/python3.6/site-packages/mod_wsgi/server/mod_wsgi-py36.cpython-36m-x86_64-linux-gnu.so"
+      notify: Restart Apache-service
+
+    - name: Configuration of virtual host configuration (Step 2 of 3)
+      lineinfile:
+        path: /etc/httpd/conf.d/graphite-vhost.conf
+        insertafter: 'WSGISocketPrefix run/wsgi'
+        line: "WSGIPythonHome /opt/graphite"
+      notify: Restart Apache-service
+
+    - name: Configuration of virtual host configuration (Step 3 of 3)
+      blockinfile:
+        path: /etc/httpd/conf.d/graphite-vhost.conf
+        insertafter: 'Alias /static/ /opt/graphite/static/'
+        block: "{{ httpd_static_block }}"
+      notify: Restart Apache-service
+
+    - name: Grant access to user and group apache on db and logs contained directory
+      file:
+        path: /opt/graphite/storage/
+        state: directory
+        owner: apache
+        group: apache
+        recurse: yes
+
+    - name: HTTPD start and enable after configuration finish
+      systemd:
+        name: httpd
+        state: started
+        enabled: yes
+
+  handlers:
+
+  - name: Restart crond
+    systemd:
+      name: crond
+      state: restarted
+
+  - name: Restart Apache-service
+    systemd:
+      name: httpd
+      state: restarted

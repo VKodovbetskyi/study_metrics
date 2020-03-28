@@ -1,0 +1,151 @@
+---
+- name: Installation of Cassandra Cluster
+  hosts: cassandra_cluster_test
+  become: yes
+
+  vars:
+
+    cassandra_repo_file: |
+      [cassandra]
+      name=Apache Cassandra
+      baseurl=https://downloads.apache.org/cassandra/redhat/311x/
+      gpgcheck=1
+      repo_gpgcheck=1
+      gpgkey=https://downloads.apache.org/cassandra/KEYS
+
+    cassandra_service_file: |
+      # /usr/lib/systemd/system/cassandra.service
+
+      [Unit]
+      Description=Cassandra
+      After=network.target
+
+      [Service]
+      PIDFile=/var/run/cassandra/cassandra.pid
+      User=cassandra
+      Group=cassandra
+      ExecStart=/usr/sbin/cassandra -f -p /var/run/cassandra/cassandra.pid
+      StandardOutput=journal
+      StandardError=journal
+      LimitNOFILE=100000
+      LimitMEMLOCK=infinity
+      LimitNPROC=32768
+      LimitAS=infinity
+      Restart=always
+
+
+      [Install]
+      WantedBy=multi-user.target
+
+  tasks:
+
+#    - debug:
+#        var: ansible_facts.eth0.ipv4.address
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+      
+    - name: Change time zone to Europe/Kiev
+      timezone:
+        name: Europe/Kiev
+      notify: Restart Crond
+
+    - name: Install epel-release package
+      yum:
+        name: epel-release
+        state: latest
+
+    - name: Setup "cassandra" repo
+      copy:
+        dest: /etc/yum.repos.d/cassandra.repo
+        content: "{{ cassandra_repo_file }}"
+
+    - name: Upgrade all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install basic yum packages
+      yum:
+        name:
+          - bash-completion
+          - bash-completion-extras
+          - vim
+          - java-1.8.0-openjdk
+        state: latest
+
+    - name: Install Cassandra
+      yum:
+        name: cassandra
+        state: latest
+
+    - name: Configuration of Cassandra Cluster configuration file (Step 1 of 6)
+      lineinfile:
+        path: /etc/cassandra/conf/cassandra.yaml
+        regexp: '^cluster_name:'
+        line: "cluster_name: 'My Awesome Cassandra Cluster'"
+      notify: Restart Cassandra
+
+    - name: Configuration of Cassandra Cluster configuration file (Step 2 of 6)
+      lineinfile:
+        path: /etc/cassandra/conf/cassandra.yaml
+        regexp: '.*- seeds'
+        line: "          - seeds: {{ cassandra_seeds }}"
+      notify: Restart Cassandra
+
+    - name: Configuration of Cassandra Cluster configuration file (Step 3 of 6)
+      lineinfile:
+        path: /etc/cassandra/conf/cassandra.yaml
+        regexp: '^listen_address'
+        line: "listen_address: {{ ansible_facts.eth0.ipv4.address }}"
+      notify: Restart Cassandra
+
+    - name: Configuration of Cassandra Cluster configuration file (Step 4 of 6)
+      lineinfile:
+        path: /etc/cassandra/conf/cassandra.yaml
+        regexp: '^rpc_address'
+        line: "rpc_address: 0.0.0.0"
+      notify: Restart Cassandra
+
+    - name: Configuration of Cassandra Cluster configuration file (Step 5 of 6)
+      lineinfile:
+        path: /etc/cassandra/conf/cassandra.yaml
+        regexp: '^# broadcast_rpc_address: 1.2.3.4'
+        line: "broadcast_rpc_address: {{ ansible_facts.eth0.ipv4.address }}"
+      notify: Restart Cassandra
+
+    - name: Configuration of Cassandra Cluster configuration file (Step 6 of 6)
+      lineinfile:
+        path: /etc/cassandra/conf/cassandra.yaml
+        regexp: '^endpoint_snitch'
+        line: "endpoint_snitch: GossipingPropertyFileSnitch"
+      notify: Restart Cassandra
+
+    - name: Setup "cassandra" service-file
+      copy:
+        dest: /usr/lib/systemd/system/cassandra.service
+        content: "{{ cassandra_service_file }}"
+      notify: Reload Systemd
+
+    - name: Cassandra service enable and start
+      systemd:
+        name: cassandra
+        state: started
+        enabled: yes
+
+  handlers:
+
+  - name: Restart Crond
+    systemd:
+      name: crond
+      state: restarted
+
+  - name: Reload Systemd
+    systemd:
+      daemon_reload: yes
+
+  - name: Restart Cassandra
+    systemd:
+      name: cassandra
+      state: restarted

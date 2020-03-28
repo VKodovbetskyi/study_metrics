@@ -1,0 +1,148 @@
+---
+- name: Installation of MetrikTank
+  hosts: metrictank_1
+  become: yes
+
+  vars:
+    raintank_repo_content: |
+      [raintank_raintank]
+      name=raintank_raintank
+      baseurl=https://packagecloud.io/raintank/raintank/el/7/$basearch
+      repo_gpgcheck=1
+      gpgcheck=0
+      enabled=1
+      gpgkey=https://packagecloud.io/raintank/raintank/gpgkey
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+      metadata_expire=300
+      
+      [raintank_raintank-source]
+      name=raintank_raintank-source
+      baseurl=https://packagecloud.io/raintank/raintank/el/7/SRPMS
+      repo_gpgcheck=1
+      gpgcheck=0
+      enabled=1
+      gpgkey=https://packagecloud.io/raintank/raintank/gpgkey
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+      metadata_expire=300
+
+  tasks:
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+      
+    - name: Change time zone to Europe/Kiev
+      timezone:
+        name: Europe/Kiev
+      notify: Restart crond
+
+    - name: Install epel-release package
+      yum:
+        name: epel-release
+        state: latest
+
+    - name: Setup "raintank" repo for MetricTank inastallation
+      copy:
+        dest: /etc/yum.repos.d/raintank_raintank.repo
+        content: "{{ raintank_repo_content }}"
+
+    - name: Upgrade all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install basic yum packages
+      yum:
+        name:
+          - bash-completion
+          - bash-completion-extras
+          - vim
+        state: latest
+
+    - name: Install MetricTank
+      yum:
+        name: metrictank
+        state: latest
+
+    - name: Create workdir for metrictank systemd file
+      file:
+        path: /var/run/metrictank
+        state: directory
+
+    - name: Install Statsdaemon
+      yum:
+        name: statsdaemon
+        state: latest
+
+    - name: Start Statsdaemon
+      systemd:
+        name: statsdaemon
+        state: started
+        enabled: yes
+
+    - name: Setup /etc/statsdaemon.ini (Step 1 of 4)
+      lineinfile:
+        path: /etc/statsdaemon.ini
+        regexp: '^flush_interval'
+        line: flush_interval = 1
+      notify: Restart Statsdaemon
+
+    - name: Setup /etc/statsdaemon.ini (Step 2 of 4)
+      lineinfile:
+        path: /etc/statsdaemon.ini
+        regexp: '^prefix_rates ='
+        line: 'prefix_rates = "stats.test."'
+      notify: Restart Statsdaemon
+
+    - name: Setup /etc/statsdaemon.ini (Step 3 of 4)
+      lineinfile:
+        path: /etc/statsdaemon.ini
+        regexp: '^prefix_timers ='
+        line: 'prefix_timers = "stats.test.timers."'
+      notify: Restart Statsdaemon
+
+    - name: Setup /etc/statsdaemon.ini (Step 4 of 4)
+      lineinfile:
+        path: /etc/statsdaemon.ini
+        regexp: '^prefix_gauges ='
+        line: 'prefix_gauges = "stats.test.gauges."'
+      notify: Restart Statsdaemon
+
+    - name: Setup /etc/metrictank/metrictank.ini
+      lineinfile:
+        path: /etc/metrictank/metrictank.ini
+        regexp: '^hosts ='
+        line: "hosts = {{ cassandra_seeds_for_metrictank_ini }}"
+      notify: Restart MetricTank
+
+    - name: Setup /etc/metrictank/metrictank.ini
+      lineinfile:
+        path: /etc/metrictank/metrictank.ini
+        regexp: '^addrs ='
+        line: "addrs = {{ cassandra_seeds }}"
+      notify: Restart MetricTank
+
+    - name: Start Statsdaemon
+      systemd:
+        name: metrictank
+        state: started
+        enabled: yes
+
+  handlers:
+
+  - name: Restart Csrond
+    systemd:
+      name: crond
+      state: restarted
+
+  - name: Restart Statsdaemon
+    systemd:
+      name: statsdaemon
+      state: restarted
+
+  - name: Restart MetricTank
+    systemd:
+      name: metrictank
+      state: restarted

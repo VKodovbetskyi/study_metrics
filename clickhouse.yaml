@@ -1,0 +1,264 @@
+---
+- name: Installation of a Clickhouse server
+  hosts: clickhouse
+  become: yes
+
+  vars:
+    retention_xml: |
+      <graphite_rollup>
+        <!-- default -->
+        <default>
+          <function>avg</function>
+          <retention>
+            <age>0</age>
+            <precision>60</precision>
+          </retention>
+          <retention>
+            <age>864000</age>
+            <precision>900</precision>
+          </retention>
+          <retention>
+            <age>1728000</age>
+            <precision>1800</precision>
+          </retention>
+          <retention>
+            <age>3456000</age>
+            <precision>3600</precision>
+          </retention>
+          <retention>
+            <age>10368000</age>
+            <precision>21600</precision>
+          </retention>
+          <retention>
+            <age>34560000</age>
+            <precision>43200</precision>
+          </retention>
+          <retention>
+            <age>63072000</age>
+            <precision>86400</precision>
+          </retention>
+          <retention>
+            <age>94608000</age>
+            <precision>604800</precision>
+          </retention>
+        </default>
+      </graphite_rollup>
+    go_graphite_stable_repo: |
+      [go-graphite_stable]
+      name=go-graphite_stable
+      baseurl=https://packagecloud.io/go-graphite/stable/el/7/$basearch
+      repo_gpgcheck=1
+      gpgcheck=0
+      enabled=1
+      gpgkey=https://packagecloud.io/go-graphite/stable/gpgkey
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+      metadata_expire=300
+
+      [go-graphite_stable-source]
+      name=go-graphite_stable-source
+      baseurl=https://packagecloud.io/go-graphite/stable/el/7/SRPMS
+      repo_gpgcheck=1
+      gpgcheck=0
+      enabled=1
+      gpgkey=https://packagecloud.io/go-graphite/stable/gpgkey
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+      metadata_expire=300
+    graphite_index: |
+      [upload.graphite_index]
+      type = "index"
+      table = "graphite.graphite_index"
+      threads = 1
+      url = "http://localhost:8123/"
+      timeout = "1m0s"
+      cache-ttl = "12h0m0s"
+
+  tasks:
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+      
+    - name: Change time zone to Europe/Kiev
+      timezone:
+        name: Europe/Kiev
+      notify: Restart crond
+
+    - name: Upgrade all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install basic yum packages
+      yum:
+        name:
+          - bash-completion
+          - bash-completion-extras
+          - golang
+          - python-lxml
+        state: latest
+
+    - name: Add Clickhouse official repo to yum-repolist
+      yum_repository:
+        name: repo.yandex.ru_clickhouse_rpm_stable_x86_64
+        description: "added from: https://repo.yandex.ru/clickhouse/rpm/stable/x86_64"
+        baseurl: https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+        gpgkey: https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
+        enabled: yes
+
+    - name: Install Clickhouse server and client packages
+      yum:
+        name:
+          - clickhouse-server
+          - clickhouse-client
+        state: latest
+
+    - name: Insert graphite_rollup node to clickhouse config.xml
+      blockinfile:
+        path: /etc/clickhouse-server/config.xml
+        marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+        insertbefore: "</yandex>"
+        block: "{{ retention_xml }}"
+
+    - name: Clickhouse service start and enable
+      systemd:
+        name: clickhouse-server
+        state: started
+        enabled: yes
+
+    - name: Enable "go-graphite_stable" repo
+      copy:
+        dest: /etc/yum.repos.d/go-graphite_stable.repo
+        content: "{{ go_graphite_stable_repo }}"
+
+    - name: Install carbon-clickhouse and graphite-clickhouse
+      yum:
+        name:
+          - carbon-clickhouse
+          - graphite-clickhouse
+        state: latest
+
+    - name: Copy Database init script to tareget host
+      copy:
+        dest: /tmp/create_graphite_tables
+        src: /home/admin/ansible/create_graphite_tables
+
+    - name: Create init database and tables into graphite DBMS
+      shell:
+        cmd: cat /tmp/create_graphite_tables | /usr/bin/clickhouse-client -n
+        executable: /bin/bash
+
+    - name: Ensure "table = graphite.graphite" is in section "[upload.graphite]" in specified file
+      ini_file:
+        path: /etc/carbon-clickhouse/carbon-clickhouse.conf
+        section: upload.graphite
+        option: table
+        value: '"graphite.graphite"'
+      notify: Carbon-clickhouse restart
+
+    - name: Insert "[upload.graphite_index]" section
+      blockinfile:
+        path: /etc/carbon-clickhouse/carbon-clickhouse.conf
+        block: "{{ graphite_index }}"
+        insertbefore: '\[udp\]'
+
+    - name: Create Carbon log directory if it does not exist
+      file:
+        path: /var/log/carbon-clickhouse
+        state: directory
+
+    - name: Create Carbon data directory if it does not exist
+      file:
+        path: /data/carbon-clickhouse
+        state: directory
+
+    - name: Create Carbon log file
+      file:
+        path: /var/log/carbon-clickhouse/carbon-clickhouse.log
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Create Graphite log directory if it does not exist
+      file:
+        path: /var/log/graphite-clickhouse
+        state: directory
+
+    - name: Create Graphite log file
+      file:
+        path: /var/log/graphite-clickhouse/graphite-clickhouse.log
+        state: touch
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Create /etc/graphite-clickhouse/rollup.xml
+      copy:
+        dest: /etc/graphite-clickhouse/rollup.xml
+        content: "{{ retention_xml }}"
+
+    - name: Carbon-Clickhouse service start and enable
+      systemd:
+        name: carbon-clickhouse
+        state: started
+        enabled: yes
+
+    - name: Ensure "index-table = "graphite.graphite_index"" is in section [clickhouse] in specified file
+      ini_file:
+        path: /etc/graphite-clickhouse/graphite-clickhouse.conf
+        section: clickhouse
+        option: index-table
+        value: '"graphite.graphite_index"'
+      notify: Graphite-clickhouse restart
+
+    - name: Ensure "tagged-table = "graphite.graphite_tagged"" is in section [clickhouse] in specified file
+      ini_file:
+        path: /etc/graphite-clickhouse/graphite-clickhouse.conf
+        section: clickhouse
+        option: tagged-table
+        value: '"graphite.graphite_tagged"'
+      notify: Graphite-clickhouse restart
+
+    - name: Ensure "data-table = "graphite.graphite"" is in section [clickhouse] in specified file
+      ini_file:
+        path: /etc/graphite-clickhouse/graphite-clickhouse.conf
+        section: clickhouse
+        option: data-table
+        value: '"graphite.graphite"'
+      notify: Graphite-clickhouse restart
+
+    - name: Ensure "rollup-conf = "/etc/graphite-clickhouse/rollup.xml"" is in section [clickhouse] in specified file
+      ini_file:
+        path: /etc/graphite-clickhouse/graphite-clickhouse.conf
+        section: clickhouse
+        option: rollup-conf
+        value: '"/etc/graphite-clickhouse/rollup.xml"'
+      notify: Graphite-clickhouse restart
+
+    - name: Graphite-Clickhouse service start and enable
+      systemd:
+        name: graphite-clickhouse
+        state: started
+        enabled: yes
+
+  handlers:
+
+  - name: Restart crond
+    systemd:
+      name: crond
+      state: restarted
+
+  - name: Clickhouse-server restart
+    systemd:
+      name: clickhouse-server
+      state: restarted
+
+  - name: Carbon-clickhouse restart
+    systemd:
+      name: carbon-clickhouse
+      state: restarted
+
+  - name: Graphite-clickhouse restart
+    systemd:
+      name: graphite-clickhouse
+      state: restarted

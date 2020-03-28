@@ -1,0 +1,84 @@
+---
+- name: Installation of MetrikTank
+  hosts: metrictank_1
+  become: yes
+
+  vars:
+    raintank_repo_content: |
+      [raintank_raintank]
+      name=raintank_raintank
+      baseurl=https://packagecloud.io/raintank/raintank/el/7/$basearch
+      repo_gpgcheck=1
+      gpgcheck=0
+      enabled=1
+      gpgkey=https://packagecloud.io/raintank/raintank/gpgkey
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+      metadata_expire=300
+      
+      [raintank_raintank-source]
+      name=raintank_raintank-source
+      baseurl=https://packagecloud.io/raintank/raintank/el/7/SRPMS
+      repo_gpgcheck=1
+      gpgcheck=0
+      enabled=1
+      gpgkey=https://packagecloud.io/raintank/raintank/gpgkey
+      sslverify=1
+      sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+      metadata_expire=300
+
+  tasks:
+
+    - name: Disable SELinux
+      selinux:
+        state: disabled
+      
+    - name: Change time zone to Europe/Kiev
+      timezone:
+        name: Europe/Kiev
+      notify: Restart crond
+
+    - name: Install epel-release package
+      yum:
+        name: epel-release
+        state: latest
+
+    - name: Setup "raintank" repo for MetricTank inastallation
+      copy:
+        dest: /etc/yum.repos.d/raintank_raintank.repo
+        content: "{{ raintank_repo_content }}"
+
+    - name: Upgrade all packages
+      yum:
+        name: '*'
+        state: latest
+
+    - name: Install basic yum packages
+      yum:
+        name:
+          - bash-completion
+          - bash-completion-extras
+          - vim
+        state: latest
+
+    - name: Install MetricTank
+      yum:
+        name: metrictank
+        state: latest
+
+    - name: Create workdir for metrictank systemd file
+      file:
+        path: /var/run/metrictank
+        state: directory
+
+  handlers:
+
+  - name: Restart Csrond
+    systemd:
+      name: crond
+      state: restarted
+
+  - name: Restart MetricTank
+    systemd:
+      name: metrictank
+      state: restarted
