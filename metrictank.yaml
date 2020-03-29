@@ -27,6 +27,8 @@
       sslcacert=/etc/pki/tls/certs/ca-bundle.crt
       metadata_expire=300
 
+    metrictank_pid_conf_content: d /var/run/metrictank 0755 root root
+
   tasks:
 
     - name: Disable SELinux
@@ -46,7 +48,7 @@
     - name: Setup "raintank" repo for MetricTank inastallation
       copy:
         dest: /etc/yum.repos.d/raintank_raintank.repo
-        content: "{{ raintank_repo_content }}"
+        content: {{ raintank_repo_content }}
 
     - name: Upgrade all packages
       yum:
@@ -66,10 +68,15 @@
         name: metrictank
         state: latest
 
-    - name: Create workdir for metrictank systemd file
-      file:
-        path: /var/run/metrictank
-        state: directory
+    - name: Setup metrictank.conf for tmpfs workdir creation on startup for metrictank systemd file
+      copy:
+        dest: /etc/tmpfiles.d/metrictank.conf
+        content: {{ metrictank_pid_conf_content }}
+
+    # - name: Create workdir for metrictank systemd file
+    #   file:
+    #     path: /var/run/metrictank
+    #     state: directory
 
     - name: Install Statsdaemon
       yum:
