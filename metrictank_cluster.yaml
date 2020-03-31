@@ -1,6 +1,6 @@
 ---
-- name: Installation of MetrikTank
-  hosts: metrictank_1
+- name: Installation of MetrikTank Cluster
+  hosts: metrictank_cluster
   become: yes
 
   vars:
@@ -34,6 +34,7 @@
     - name: Disable SELinux
       selinux:
         state: disabled
+      notify: Reboot
       
     - name: Change time zone to Europe/Kiev
       timezone:
@@ -71,9 +72,12 @@
     - name: Setup metrictank.conf for tmpfs workdir creation on startup for metrictank systemd file
       copy:
         dest: /etc/tmpfiles.d/metrictank.conf
-        content: {{ metrictank_pid_conf_content }}
+        content: "{{ metrictank_pid_conf_content }}"
 
   handlers:
+
+  - name: Reboot
+    reboot:
 
   - name: Restart Crond
     systemd:
