@@ -49,7 +49,7 @@
     - name: Setup "raintank" repo for MetricTank inastallation
       copy:
         dest: /etc/yum.repos.d/raintank_raintank.repo
-        content: {{ raintank_repo_content }}
+        content: "{{ raintank_repo_content }}"
 
     - name: Upgrade all packages
       yum:
@@ -118,21 +118,21 @@
         line: 'prefix_gauges = "stats.test.gauges."'
       notify: Restart Statsdaemon
 
-    - name: Setup /etc/metrictank/metrictank.ini
+    - name: Setup /etc/metrictank/metrictank.ini (Step 1 of 2)
       lineinfile:
         path: /etc/metrictank/metrictank.ini
         regexp: '^hosts ='
         line: "hosts = {{ cassandra_seeds_for_metrictank_ini }}"
       notify: Restart MetricTank
 
-    - name: Setup /etc/metrictank/metrictank.ini
+    - name: Setup /etc/metrictank/metrictank.ini (Step 2 of 2)
       lineinfile:
         path: /etc/metrictank/metrictank.ini
         regexp: '^addrs ='
         line: "addrs = {{ cassandra_seeds }}"
       notify: Restart MetricTank
 
-    - name: Start Statsdaemon
+    - name: Start Metrictank
       systemd:
         name: metrictank
         state: started

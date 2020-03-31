@@ -29,6 +29,9 @@
 
     metrictank_pid_conf_content: d /var/run/metrictank 0755 root root
 
+    # create a number of node based on the server host index in inventory file (target start position is 0)
+    metrictank_node_number: "{{ play_hosts.index(inventory_hostname) + 1 }} "
+
   tasks:
 
     - name: Disable SELinux
@@ -73,6 +76,33 @@
       copy:
         dest: /etc/tmpfiles.d/metrictank.conf
         content: "{{ metrictank_pid_conf_content }}"
+
+    - name: Setup /etc/metrictank/metrictank.ini (Step 1 of 3)
+      lineinfile:
+        path: /etc/metrictank/metrictank.ini
+        regexp: '^hosts ='
+        line: "hosts = {{ cassandra_seeds_for_metrictank_ini }}"
+      notify: Restart MetricTank
+
+    - name: Setup /etc/metrictank/metrictank.ini (Step 2 of 3)
+      lineinfile:
+        path: /etc/metrictank/metrictank.ini
+        regexp: '^addrs ='
+        line: "addrs = {{ cassandra_seeds }}"
+      notify: Restart MetricTank
+
+    - name: Setup /etc/metrictank/metrictank.ini --> Instance Node Name (Step 3 of 3)
+      lineinfile:
+        path: /etc/metrictank/metrictank.ini
+        regexp: '^instance ='
+        line: "instance = metrictank_node-{{ metrictank_node_number }}"
+      notify: Restart MetricTank
+
+    - name: Start Metrictank
+      systemd:
+        name: metrictank
+        state: started
+        enabled: yes
 
   handlers:
 
