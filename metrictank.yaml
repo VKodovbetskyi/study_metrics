@@ -39,7 +39,7 @@
     - name: Change time zone to Europe/Kiev
       timezone:
         name: Europe/Kiev
-      notify: Restart crond
+      notify: Restart Crond
 
     - name: Install epel-release package
       yum:
