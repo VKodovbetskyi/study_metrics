@@ -1,7 +1,7 @@
 [test_servers]
 graphite_web    ansible_host=10.132.0.14
 clickhouse      ansible_host=10.166.0.14
-# metrictank_1    ansible_host=10.164.0.3
+metrictank_1    ansible_host=10.164.0.3         # Kafka installed here
 
 [cassandra_cluster]
 cassandra_1     ansible_host=10.164.0.4
@@ -9,8 +9,8 @@ cassandra_2     ansible_host=10.164.0.5
 cassandra_3     ansible_host=10.164.0.6
 
 [metrictank_cluster]
-metrictank_1    ansible_host=10.164.0.3
-metrictank_2    ansible_host=10.164.0.7
+metrictank_2    ansible_host=10.164.0.8
+metrictank_3    ansible_host=10.164.0.9
 
 [all:vars]
 ansible_user=admin
