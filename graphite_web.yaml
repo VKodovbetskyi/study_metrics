@@ -44,6 +44,7 @@
           - httpd
           - httpd-devel
           - gcc
+          - htop
         state: latest
 
     - name: Upgrade pip packages + install virtualenv
@@ -107,7 +108,7 @@
       lineinfile:
         path: /opt/graphite/webapp/graphite/local_settings.py
         insertafter: '^#CLUSTER_SERVERS '
-        line: CLUSTER_SERVERS = ["10.166.0.14:9090"]
+        line: CLUSTER_SERVERS = ["10.166.0.17:9090"]
       notify: Restart Apache-service
 
     - name: Init mysqlite3 DB

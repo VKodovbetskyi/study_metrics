@@ -11,7 +11,7 @@
           <function>avg</function>
           <retention>
             <age>0</age>
-            <precision>60</precision>
+            <precision>5</precision>
           </retention>
           <retention>
             <age>864000</age>
@@ -97,6 +97,7 @@
           - bash-completion-extras
           - golang
           - python-lxml
+          - htop
         state: latest
 
     - name: Add Clickhouse official repo to yum-repolist
