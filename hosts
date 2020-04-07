@@ -1,6 +1,6 @@
 [test_servers]
-graphite_web    ansible_host=10.166.0.16
-clickhouse      ansible_host=10.166.0.17
+graphite_web    ansible_host=10.132.0.17	# 10.166.0.16
+clickhouse      ansible_host=10.132.0.16	# 10.166.0.17
 metrictank_1    ansible_host=10.164.0.3         # Kafka installed here
 
 [cassandra_cluster]
